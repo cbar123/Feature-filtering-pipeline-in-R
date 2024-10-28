@@ -4,21 +4,19 @@ library(dplyr)
 library(stringr)
 library(tidyr)
 
-head(otu[, 185:191])
-
 # Read input files
 otu <- read.table(file = "table_taxafilt.tsv", sep = "\t", header = TRUE, row.names = 1, skip = 1, comment.char = "")
 taxonomy <- read.table(file = "taxonomy.tsv", sep = "\t", header = TRUE, row.names = 1)
 metadata_allsamples <- read.table(file = "MF_samples_withctrls_nofilt.txt", sep = "\t", header = TRUE, row.names = 1)
 
 # Process taxonomy data
-tax.clean <- taxonomy %>%
+tax.cur <- taxonomy %>%
   separate(Taxon, into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), sep = "; ") %>%
   mutate(across(everything(), ~str_replace(.x, "^[a-z]__", ""))) %>%
   mutate(across(everything(), ~replace(.x, is.na(.x) | .x == "__", "")))
 
 # Retain taxa IDs as row names in tax.clean
-tax.clean <- tax.clean %>% 
+tax.cur <- tax.cur %>% 
   rownames_to_column(var = "TaxaID") %>%
   rowwise() %>%
   mutate(
@@ -34,51 +32,35 @@ tax.clean <- tax.clean %>%
   column_to_rownames(var = "TaxaID")
 
 # Handle the case where Species is not empty and should include Genus
-tax.clean <- tax.clean %>%
+tax.cur <- tax.cur %>%
   mutate(Species = ifelse(Species != "" & Genus != "", paste(Genus, Species), Species))
   
   
 # Create phyloseq object
 OTU <- otu_table(as.matrix(otu), taxa_are_rows = TRUE)
-TAX <- tax_table(as.matrix(tax.clean))
+TAX <- tax_table(as.matrix(tax.cur))
 SAMPLE <- sample_data(metadata_allsamples)
 TREE <- read_tree("tree.nwk")
 
 ps <- phyloseq(OTU, TAX, SAMPLE, TREE)
 ps
 
-#phyloseq-class experiment-level object
-#otu_table()   OTU Table:         [ 5097 taxa and 191 samples ]
-#sample_data() Sample Data:       [ 191 samples by 7 sample variables ]
-#tax_table()   Taxonomy Table:    [ 5097 taxa by 7 taxonomic ranks ]
-#phy_tree()    Phylogenetic Tree: [ 5097 tips and 5046 internal nodes ]
-
-
-# Export OTU table
+# Export feauture table
 table <- as.data.frame(as.matrix(ps@otu_table))
 table <- data.frame(FeatureID = row.names(table), table)
-write.table(table, file = "table.tsv")
 
 # Transform to relative abundance (RA)
 ps_RA <- transform_sample_counts(ps, function(x) x / sum(x) * 100)
 ps_RA <- prune_taxa(taxa_sums(ps_RA) > 0, ps_RA)
 ps_RA
 
-
 # Export RA table
 table_RA <- as.data.frame(as.matrix(ps_RA@otu_table))
 table_RA <- data.frame(FeatureID = row.names(table_RA), table_RA)
-write.table(table_RA, file = "table_RA.tsv")
 
 # Subset controls and calculate mean abundance
 ps_RA_nCs <- subset_samples(ps_RA, Sample_or_Control %in% "Control")
 ps_RA_nCs
-
-#phyloseq-class experiment-level object
-#otu_table()   OTU Table:         [ 5097 taxa and 8 samples ]
-#sample_data() Sample Data:       [ 8 samples by 7 sample variables ]
-#tax_table()   Taxonomy Table:    [ 5097 taxa by 7 taxonomic ranks ]
-#phy_tree()    Phylogenetic Tree: [ 5097 tips and 5046 internal nodes ]
 
 table_nCs <- as.data.frame(as.matrix(ps_RA_nCs@otu_table))
 table_nCs <- data.frame(FeatureID = row.names(table_nCs), table_nCs)
@@ -98,18 +80,10 @@ table_Samples <- data.frame(FeatureID = row.names(table_Samples), table_Samples)
 table_Samples_calc <- table_Samples %>%  
   mutate(mean_samples = rowMeans(select(., A.1025:F.1340)), na.rm = TRUE)
 
-head(table_Samples_calc[180:185])
-
-# Match and calculate ratio
+# Match FeaturesIDs and calculate ratio(>0.9)
 match_tables <- inner_join(table_Samples_calc, table_nCs_calc_1, by = "FeatureID")
 match_tables <- match_tables %>%
   mutate(ratio = mean / mean_samples)
-
-#matched_tables2$ratio <- matched_tables2$mean / matched_tables2$mean_samples
-
-head(match_tables[190:195])
-
-write.table(match_tables, file = "match_tables_ratio.tsv")
 
 # Identify and filter out contaminants
 Contaminants <- match_tables %>% filter(ratio > 0.9)
@@ -118,8 +92,6 @@ write.table(Contaminants, file = "Contaminants.tsv")
 # Filter the main OTU table to remove contaminants
 table_filt <- table[!(table$FeatureID %in% Contaminants$FeatureID), ] 
 table_filt <- subset(table_filt, select = -FeatureID)
-
-write.table(table_filt, file = "table_filt.tsv")
 
 # Export filtered table to BIOM format
 table_filt %>%
@@ -131,9 +103,3 @@ OTU_filt <- otu_table(as.matrix(table_filt), taxa_are_rows = TRUE)
 ps_filt <- phyloseq(OTU_filt, TAX, SAMPLE, TREE)
 
 ps_filt
-
-#phyloseq-class experiment-level object
-#otu_table()   OTU Table:         [ 5082 taxa and 191 samples ]
-#sample_data() Sample Data:       [ 191 samples by 7 sample variables ]
-#tax_table()   Taxonomy Table:    [ 5082 taxa by 7 taxonomic ranks ]
-#phy_tree()    Phylogenetic Tree: [ 5082 tips and 5034 internal nodes ]
