@@ -70,8 +70,8 @@ ps_RA_nCs <- subset_samples(ps_RA, Sample_or_Control %in% "Control")
 ps_RA_nCs
 ```
 
-##Feature table into data frame
-###To be able to detect contaminant features from the negative controls transform first the feature table from your phyloseq object into a data frame
+### Feature table into data frame
+To be able to detect contaminant features from the negative controls transform first the feature table from your phyloseq object into a data frame
 ```
 table_nCs <- as.data.frame(as.matrix(ps_RA_nCs@otu_table))
 table_nCs <- data.frame(FeatureID = row.names(table_nCs), table_nCs)
@@ -104,7 +104,7 @@ match_tables <- match_tables %>%
 ```
 
 ## 4. Identify contaminants (ratio > 0.9)
-###ratio above 0.9 means: a especific feature is found in negative controls with higher RA compared to mean RA in the Samples = contaminant
+ratio above 0.9 --> contaminant = a especific feature found in negative controls with higher RA compared to its mean RA in Samples 
 ```
 Contaminants <- match_tables %>% filter(ratio > 0.9)
 write.table(Contaminants, file = "Contaminants.tsv")
